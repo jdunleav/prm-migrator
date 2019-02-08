@@ -13,9 +13,9 @@ phases:
       - eval $(./utils/aws-cli-assumerole.sh -r $ASSUME_ROLE_NAME)
   build:
     commands:
-      - cd ./lambda/retrieve_status
+      - cd ./lambda/translator
       - npm install
-      - zip ../../retrieve_status.zip . -r -x *.test.js -x wallaby.js
+      - zip ../../translator.zip . -r -x wallaby.js
       - cd -
-      - aws s3 cp retrieve_status.zip s3://prm-431593652018-codebuild-lambda-artifact/retrieve_status.zip
-      - aws lambda update-function-code --region $AWS_REGION --function-name dev-RetrieveStatus --s3-bucket prm-431593652018-codebuild-lambda-artifact --s3-key retrieve_status.zip
+      - aws s3 cp translator.zip s3://prm-431593652018-codebuild-lambda-artifact/translator.zip
+      - aws lambda update-function-code --region $AWS_REGION --function-name dev-Translator --s3-bucket prm-431593652018-codebuild-lambda-artifact --s3-key translator.zip

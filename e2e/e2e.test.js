@@ -1,87 +1,68 @@
-const Url = require("url");
+const Url = require('url');
 const request = require("request-promise-native");
 const errors = require("request-promise-native/errors");
 const sleep = m => new Promise(r => setTimeout(r, m));
+require('jest-matcher-one-of');
+const given = require('./given');
 
-const PRM_URL = new Url.URL(process.env.PRM_ENDPOINT);
+describe("As a supplier, I can successfully translate a GP2GP message", async () => {
 
-let testUuid;
-const testPayload = "foo";
+    const PRM_URL = new Url.URL(process.env.PRM_ENDPOINT);
 
-test("As a supplier, I can send my message and see that it has been accepted", async () => {
-    const url = `${PRM_URL.origin}${PRM_URL.pathname}/send`;
+    describe("I can successfully send a payload", async () => {
 
-    var options = {
-        method: 'POST',
-        uri: url,
-        body: JSON.stringify({
-            payload: testPayload
-        }),
-        resolveWithFullResponse: true
-    };
+        let postPayloadResponse;
+        let testUuid;
 
-    const response = await request.post(options);
+        beforeAll(async () => {
+            const url = `${PRM_URL.origin}${PRM_URL.pathname}/send`;
 
-    expect(response.statusCode).toBe(200);
-    const {uuid, status, payload} = JSON.parse(response.body);
-    testUuid = uuid;
-    expect(uuid).toBeDefined();
-    expect(status).toBe("ACCEPTED");
-    expect(payload).toBe('foo');
-});
+            const options = {
+                method: 'POST',
+                uri: url,
+                body: given.tpp_sample_encodedXml,
+                resolveWithFullResponse: true
+            };
 
-test("As a supplier, I can see my message has been accepted", async () => {
-    const statusUrl = `${PRM_URL.origin}${PRM_URL.pathname}/status/${testUuid}`;
+            postPayloadResponse = await request.post(options);
+        });
 
-    var options = {
-        method: 'GET',
-        uri: statusUrl,
-        resolveWithFullResponse: true
-    };
+        it("it should return an ok response", () => {
+            expect(postPayloadResponse.statusCode).toBe(200);
+        });
 
-    const response = await request.get(options);
+        it("it should return a uuid", () => {
+            const { uuid } = JSON.parse(postPayloadResponse.body);
+            testUuid = uuid;
+            expect(testUuid).toBeDefined();    
+        });
 
-    const {status} = JSON.parse(response.body);
-    expect(status).toBe("ACCEPTED");
-});
+        it("it should return an ACCEPTED status", () => {
+            const { status } = JSON.parse(postPayloadResponse.body);
+            expect(status).toBe("ACCEPTED");
+        });
 
-test("As a supplier, I can see my message is being processed", async () => {
-    const statusUrl = `${PRM_URL.origin}${PRM_URL.pathname}/status/${testUuid}`;
+        describe("I can see the payload has been successfully processed", async () => {
 
-    var options = {
-        method: 'GET',
-        uri: statusUrl,
-        resolveWithFullResponse: true
-    };
+            beforeAll(async () => {
+                await sleep(3000);
+            });
 
-    const response = await request.get(options);
+            describe("I can retrieve the processed payload", async () => {
 
-    const {status} = JSON.parse(response.body);
-    expect(status).toBe("PROCESSING");
-});
+                let retrievePayloadResponse;
 
+                beforeAll(async () => {
+                    const retrieveUrl = `${PRM_URL.origin}${PRM_URL.pathname}/retrieve/${testUuid}`;
+                    retrievePayloadResponse = await request.post(retrieveUrl, {
+                        resolveWithFullResponse: true
+                    });
+                });
 
-test("As a supplier, I can see my message has been completed", async () => {
-    const statusUrl = `${PRM_URL.origin}${PRM_URL.pathname}/status/${testUuid}`;
-
-    var options = {
-        method: 'GET',
-        uri: statusUrl,
-        resolveWithFullResponse: true
-    };
-
-    const response = await request.get(options);
-
-    const {status} = JSON.parse(response.body);
-    expect(status).toBe("COMPLETED");
-});
-
-test("As a supplier, I can retrieve my processed ehrExtract in form of a payload", async () => {
-    const retrieveUrl = `${PRM_URL.origin}${PRM_URL.pathname}/retrieve/${testUuid}`;
-    const retrieveResponse = await request.post(retrieveUrl, {
-        resolveWithFullResponse: true
-    });
-    
-    console.log(retrieveResponse.body);
-    expect(retrieveResponse.body).toBe(`{"payload":"${testPayload}"}`);
+                it("it should return the processed payload", () => {
+                    expect(retrievePayloadResponse.body).toBe(given.processed_ehr_extract_encodedXml);
+                });
+            })
+        })
+    })
 });

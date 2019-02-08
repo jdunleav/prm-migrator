@@ -1,71 +1,78 @@
 const ehrExtract = require("./main");
-const AWS = require("aws-sdk");
-const uuid = require("uuid/v4");
+const given = require('./given')
+const AWS = require("aws-sdk-mock");
 
-class ErrorDBMock {
-  constructor() {}
+describe("When passing in invalid payloads", () => {
 
-  put(params, callback) {
-    return {
-      promise: () => {
-        return new Promise((resolve, reject) => {
-          setTimeout(() => {
-            reject();
-          }, 100);
-        });
-      }
-    };
-  }
-}
+  test("a bad request response is returned, for an empty string", async () => {
+    let event = {"body": "" };
+    let result = await ehrExtract.handler(event);
+    expect(result.statusCode).toBe(400);
+  });
 
-class DynamoDBMock {
-  constructor() {}
+  test("a bad request response is returned, for an empty event", async () => {
+    let event = {};
+    let result = await ehrExtract.handler(event);
+    expect(result.statusCode).toBe(400);
+  });
 
-  put(params) {
-    return {
-      promise: () => {
-        return new Promise((resolve, reject) => {
-          setTimeout(() => {
-            resolve();
-          }, 100);
-        });
-      }
-    };
-  }
-}
+  test("a bad request response is returned, for invalid xml", async () => {
+    let event = {"body": "blah" };
+    let result = await ehrExtract.handler(event);
+    expect(result.statusCode).toBe(400);
+  });
+});
 
-describe("REJECTED responses", () => {
-  test("That if there is an error when saving the data, it generates a REJECTED response", async () => {
-    const result = await ehrExtract.main(new ErrorDBMock());
-    expect(result.currentStatus).toBe("REJECTED");
+describe("ERROR responses", () => {
+  let result;
+
+  beforeAll(async () => {
+    AWS.mock('DynamoDB.DocumentClient', 'put', function (params, callback){
+      callback(null, Promise.reject('Oops!'));
+    });
+    let event = {"body": given.tpp_sample_encodedXml };
+    result = await ehrExtract.handler(event);
+  });
+
+  test("That if there is an error when saving the data, it generates a ERROR response", async () => {
+    expect(result.body).toBe("{\"status\":\"ERROR\"}");
+  });
+
+  afterAll(() => {
+    AWS.restore('DynamoDB.DocumentClient');
   });
 });
 
 describe("ACCEPTED responses", () => {
-  test("That if there is no error, it generates an ACCEPTED response", async () => {
-    const result = await ehrExtract.main(new DynamoDBMock());
-    expect(result.currentStatus).toBe("ACCEPTED");
-  });
-});
+  let result;
+  let dynamoDbPutCallCount = 0;
 
-describe("Integration tests", () => {
-  test("Can successfully manage a PROCESS record", async () => {
-    const wrapper = new ehrExtract.ProcessStatusWrapper(
-      new AWS.DynamoDB.DocumentClient()
-    );
-    const uniqueId = uuid();
-    const putTesult = await wrapper.put({
-      PROCESS_ID: uniqueId,
-      PROCESS_STATUS: "TESTING"
+  beforeAll(async () => {
+    AWS.mock('DynamoDB.DocumentClient', 'put', function(params, callback) {
+      dynamoDbPutCallCount++;
+      if (params.Item.PROCESS_PAYLOAD !== given.tpp_sample_json) {
+        throw "Payload does not match expected";
+      } 
+      callback(null, {});
     });
+    let event = {"body": given.tpp_sample_encodedXml};
+    result = await ehrExtract.handler(event);
+  });
 
-    const getResult = await wrapper.get(uniqueId);
-    const item = getResult.Item;
-    expect(item.PROCESS_ID).toBe(uniqueId);
-    expect(item.PROCESS_STATUS).toBe("TESTING");
+  test("returns a successful response", async () => {
+    expect(result.statusCode).toBe(200);
+  });
 
-    await wrapper.delete(uniqueId);
+  test("it should store data", async () => {
+    expect(dynamoDbPutCallCount).toBe(1);
+  });
 
-    expect(await wrapper.get(uniqueId)).toMatchObject({});
+  test("That if there is no error, it generates an ACCEPTED response", async () => {
+    var jsonBody = JSON.parse(result.body);
+    expect(jsonBody.status).toBe("ACCEPTED");
+  });
+
+  afterAll(() => {
+    AWS.restore('DynamoDB.DocumentClient');
   });
 });

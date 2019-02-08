@@ -1,12 +1,12 @@
 const uuid = require("uuid/v4");
 const AWS = require("aws-sdk");
-
-AWS.config.update({region: "eu-west-2"});
-const client = new AWS.DynamoDB.DocumentClient();
+AWS.config.update({ region: "eu-west-2" });
+const Entities = require('html-entities').XmlEntities;
+let convert = require('xml-js');
 
 const MigrationEventStates = {
     ACCEPTED: "ACCEPTED",
-    REJECTED: "REJECTED",
+    ERROR: "ERROR",
     PROCESSING: "PROCESSING",
     COMPLETED: "COMPLETED",
     FAILED: "FAILED"
@@ -15,18 +15,11 @@ const MigrationEventStates = {
 class MigrationEventStateMachine {
     constructor(client) {
         this.uuid = undefined;
-        this.status = MigrationEventStates.REJECTED;
+        this.status = MigrationEventStates.FAILED;
         this.client = client;
     }
 
     async accept(ehrExtract) {
-        if (this.uuid !== undefined) {
-            throw new Error(
-                `INVALID STATE TRANSITION: Cannot move from ${this.status} to ${
-                    MigrationEventStates.ACCEPTED
-                    }`
-            );
-        }
         try {
             const expectedID = uuid();
             const expectedState = MigrationEventStates.ACCEPTED;
@@ -39,7 +32,7 @@ class MigrationEventStateMachine {
             this.status = result.PROCESS_STATUS;
             this.payload = result.PROCESS_PAYLOAD;
         } catch (err) {
-            console.log(err);
+            this.status = MigrationEventStates.ERROR;
         }
 
         return this;
@@ -55,8 +48,8 @@ class MigrationEventStateMachine {
 }
 
 class ProcessStatusWrapper {
-    constructor(dbClient) {
-        this.dbClient = dbClient;
+    constructor() {
+        this.dbClient = new AWS.DynamoDB.DocumentClient();
     }
 
     async put(item) {
@@ -69,54 +62,42 @@ class ProcessStatusWrapper {
             .promise();
         return item;
     }
-
-    async get(key) {
-        return await this.dbClient
-            .get({
-                TableName: "PROCESS_STORAGE",
-                Key: {
-                    PROCESS_ID: key
-                }
-            })
-            .promise();
-    }
-
-    async delete(key) {
-        return await this.dbClient
-            .delete({
-                TableName: "PROCESS_STORAGE",
-                Key: {
-                    PROCESS_ID: key
-                }
-            })
-            .promise();
-    }
 }
 
 exports.ProcessStatusWrapper = ProcessStatusWrapper;
 
-exports.main = async function (dbClient, ehrExtract) {
+exports.main = async function (ehrExtract) {
     const event = new MigrationEventStateMachine(
-        new ProcessStatusWrapper(dbClient)
+        new ProcessStatusWrapper()
     );
     const result = await event.accept(ehrExtract);
     return result;
 };
 
-exports.handler = async (event, context) => {
-    // handle AWS specific stuff here
+exports.handler = async (event) => {
+console.log(event);
+    const entities = new Entities();
+    let xml = entities.decode(event.body);
+    let ehrExtract;
 
-    const {payload} = JSON.parse(event.body);
+    try {
+        ehrExtract = convert.xml2json(xml, { compact: true, spaces: 4 });
+    } catch (error) {
+        console.log(error);
+    }
+    if (!ehrExtract || !event.body) {
+        return {
+            statusCode: 400
+        };
+    }
 
-    // call the business logic
-    const result = await module.exports.main(client, payload);
-    // handle converting back to AWS
+    const result = await module.exports.main(ehrExtract);
+
     return {
         statusCode: 200,
         body: JSON.stringify({
             uuid: result.correlationId,
-            status: result.currentStatus,
-            payload: result.payload
+            status: result.currentStatus
         }),
         isBase64Encoded: false
     };

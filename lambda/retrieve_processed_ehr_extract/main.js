@@ -1,43 +1,12 @@
 const AWS = require("aws-sdk");
-
-const MigrationEventStates = {
-    ACCEPTED: "ACCEPTED",
-    REJECTED: "REJECTED",
-    PROCESSING: "PROCESSING",
-    COMPLETED: "COMPLETED",
-    FAILED: "FAILED"
-};
-
-class MigrationEventStateMachine {
-    constructor(client) {
-        this.uuid = undefined;
-        this.status = MigrationEventStates.REJECTED;
-        this.client = client;
-    }
-
-    async get(uuid) {
-        try {
-            const result = await this.client.get(uuid);
-            this.uuid = uuid;
-            this.status = result.Item.PROCESS_STATUS;
-            this.payload = result.Item.PROCESS_PAYLOAD;
-        } catch (err) {
-            return "Entry not found";
-        }
-
-        return this;
-    }
-    
-    get currentPayload() {
-        return this.payload;
-    }
-}
+const Entities = require('html-entities').XmlEntities;
+const entities = new Entities();
+const convert = require('xml-js');
 
 class ProcessStatusWrapper {
     constructor(dbClient) {
         this.dbClient = dbClient;
     }
-
     async get(key) {
         return await this.dbClient
             .get({
@@ -51,22 +20,26 @@ class ProcessStatusWrapper {
 }
 
 exports.main = async function (dbClient, uuid) {
-    const event = new MigrationEventStateMachine(
-        new ProcessStatusWrapper(dbClient)
-    );
-    const result = await event.get(uuid);
-    return result;
+    const client = new ProcessStatusWrapper(dbClient);
+    try {
+        const result = await client.get(uuid);
+
+        let extractXml = convert.json2xml(result.Item.PROCESS_PAYLOAD, { compact: true, spaces: 4 });
+        let encodedXml = entities.encode(extractXml);
+        return encodedXml;
+    } catch (err) {
+        return "Entry not found";
+    }
 };
 
 exports.handler = async function (event) {
     const uuid = event.pathParameters.uuid;
     const client = new AWS.DynamoDB.DocumentClient();
+
     const result = await module.exports.main(client, uuid);
     return {
         statusCode: 200,
-        body: JSON.stringify({
-            payload: result.currentPayload
-        }),
+        body: result,
         isBase64Encoded: false
     };
 }

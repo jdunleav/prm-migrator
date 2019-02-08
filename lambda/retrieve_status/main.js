@@ -13,20 +13,11 @@ class MigrationEventStateMachine {
             let result = await this.client.get(uuid);
             this.uuid = uuid;
             this.status = result.Item.PROCESS_STATUS;
-
-            await this.transitionState(result, uuid, "PROCESSING", "COMPLETED");
-            await this.transitionState(result, uuid, "ACCEPTED", "PROCESSING");
         } catch (err) {
             this.status = 'NOT FOUND';
         }
 
         return this;
-    }
-
-    async transitionState(result, key, from, to) {
-        if (result.Item.PROCESS_STATUS === from) {
-            await this.client.update(key, to);
-        }
     }
 
     get currentStatus() {
@@ -56,20 +47,6 @@ class ProcessStatusWrapper {
         
         return result;
     }
-
-    async update(uuid, status) {
-        return await this.dbClient.update({
-            TableName: "PROCESS_STORAGE",
-            Key: {
-                "PROCESS_ID": uuid
-            },
-            UpdateExpression: "set PROCESS_STATUS = :p",
-            ExpressionAttributeValues: {
-                ":p": status,
-            },
-            ReturnValues: "UPDATED_NEW"
-        }).promise();
-    }
 }
 
 exports.handler = async (event, context) => {
@@ -79,10 +56,10 @@ exports.handler = async (event, context) => {
     const result = await module.exports.main(client, uuid);
     // handle converting back to AWS
     return {
-        statusCode: 200,
+        statusCode: result.currentStatus === "NOT FOUND" ? 404 : 200,
         body: JSON.stringify({
             uuid: result.correlationId,
-            status: result.currentStatus,
+            process_status: result.currentStatus,
         }),
         isBase64Encoded: false
     };

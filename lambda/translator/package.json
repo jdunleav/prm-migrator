@@ -1,5 +1,5 @@
 {
-  "name": "retrieve_status",
+  "name": "translator",
   "version": "1.0.0",
   "description": "",
   "main": "main.js",
@@ -13,8 +13,10 @@
     "jest": "^23.6.0"
   },
   "dependencies": {
-    "aws-sdk": "^2.381.0",
-    "html-entities": "^1.2.1",
+    "aws-sdk": "^2.390.0",
+    "dayjs": "^1.8.5",
+    "easyxml": "^2.0.1",
+    "fast-xml-parser": "^3.12.12",
     "xml-js": "^1.6.9"
   }
 }
